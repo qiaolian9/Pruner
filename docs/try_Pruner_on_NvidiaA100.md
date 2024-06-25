@@ -42,7 +42,7 @@ psamodel_params = {
 ```
 ##  on-line cost modelMode
 ### Steps
-1. Search with Pruner w/o MTL (tuning 2,000 trials)
+1. Search with Pruner (tuning 2,000 trials)
 ```bash
 python3 tune_network.py --network resnet_50 --n-trials 2000 --cost-model pam --target "cuda --model=a100" --psa a100_40
 ```
@@ -88,7 +88,7 @@ same cost. continue
 Mean inference time (std dev): 1.69 ms (0.00 ms)
 ```
 
-2. Search with the Pruner (tuning 2,000 trials)
+2. Search with the MoA-Pruner (tuning 2,000 trials)
 ```bash
 #  pam_k80_1500 trained from off-line cost's step 4
 python3 tune_network.py --network resnet_50 --n-trials 2000 --cost-model pam-siamese-update --load-model pam_k80_1500.pkl --target "cuda --model=a100" --psa a100_40
@@ -340,7 +340,7 @@ Mean inference time (std dev): 1.79 ms (0.00 ms)
 ```
 
 ## Summary
-| method (tuning 2,000 trails)  | ansor | Pruner w/o MTL| Pruner | TensetMLP   | Pruner w/ finetuned model |
+| method (tuning 2,000 trails)  | ansor | Pruner| MoA-Pruner | TensetMLP   | Pruner w/ finetuned model |
 | ----------------- |  --- |  --- |--- | --- | --- |
 | Update mode       | on-line| online| online| offline | offline |
 | Search time(s)       | 6,691| 5,563 | 4,978 | 5,469 | 4,212|

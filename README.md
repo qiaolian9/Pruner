@@ -17,12 +17,12 @@ A repo for Pruner
 Quick tutorial on using  Pruner on NVIDIA A100 refer to [tutorial](docs/try_Pruner_on_NvidiaA100.md).
 ###  On-Line cost model Mode
 #### Steps
-1. Search with Pruner w/o MTL (tuning 2,000 trials)
+1. Search with Pruner (tuning 2,000 trials)
 ```
 python3 tune_network.py --network resnet_50 --n-trials 2000 --cost-model pam --target "cuda --model=a100" --psa a100_40
 ```
 
-2. Search with the Pruner (tuning 2,000 trials)
+2. Search with the MoA-Pruner (tuning 2,000 trials)
 ```
 python3 tune_network.py --network resnet_50 --n-trials 2000 --cost-model pam-siamese-update --load-model pam_k80_1500.pkl --target "cuda --model=a100" --psa a100_40
 ```
@@ -50,7 +50,7 @@ python3 tune_network.py --network resnet_50 --n-trials 2000 --cost-model mlp-no-
 ```
 
 ### Summary
-| method (tuning 2,000 trails)  | ansor | Pruner w/o MTL| Pruner | TensetMLP   | Pruner w/ finetuned model |
+| method (tuning 2,000 trails)  | ansor | Pruner | MoA-Pruner | TensetMLP   | Pruner w/ finetuned model |
 | ----------------- |  --- |  --- |--- | --- | --- |
 | Update mode       | on-line| online| online| offline | offline |
 | Search time(s)       | 6,691| 5,563 | 4,978 | 5,469 | 4,212|
