@@ -23,7 +23,7 @@ def get_network_with_key(network_key):
 
     if name in ['resnet_18', 'resnet_50', 'mobilenet_v2', 'mobilenet_v3',
                 'wide_resnet_50', 'resnext_50', 'resnet3d_18', 'inception_v3',
-                'densenet_121', 'vgg_16']:
+                'densenet_121', 'vgg_16', 'deeplabv3_resnet50', 'unet',  'vit', 'detr']:
         import torch
         import torchvision.models as models   # torchvision>=0.9.0
 
@@ -45,12 +45,24 @@ def get_network_with_key(network_key):
             model = models.video.r3d_18(pretrained=False)
         elif name == 'vgg_16':
             model = getattr(models, name.replace("_", ""))(pretrained=False)
+        elif name == 'deeplabv3_resnet50':
+            from model_workload import deeplabv3
+            model = deeplabv3.deeplabv3.deeplab_v3(backbone=name.split('_')[-1])
+        elif name == 'unet':
+            from model_workload import unet
+            model = unet.unet()
+        elif name == 'vit':
+            from model_workload import vit
+            model = vit.ViT(**vit.vit_config)
+        elif name == 'detr':
+            from model_workload import detr
+            model = detr.detr()
 
         input_shape = args[0]
         dtype = 'float32'
 
         input_data = torch.randn(input_shape).type(dtype2torch(dtype))
-        scripted_model = torch.jit.trace(model, input_data).eval()
+        scripted_model = torch.jit.trace(model.eval(), input_data, strict=False).eval()
 
         input_name = 'input0'
         shape_list = [(input_name, input_shape)]
@@ -198,6 +210,36 @@ def build_network_keys():
         for image_size in [64, 80, 96]:
             network_keys.append((f'dcgan',
                                 [(batch_size, 3, image_size, image_size)]))
+            
+    # # vgg16
+    # for batch_size in [1, 4]:
+    #     for image_size in [224]:
+    #         network_keys.append((f'vgg_16',
+    #                             [(batch_size, 3, image_size, image_size)]))
+
+    # # deeplabv3_resnet50
+    # for batch_size in [1, 4]:
+    #     for image_size in [224]:
+    #         network_keys.append((f'deeplabv3_resnet50',
+    #                             [(batch_size, 3, image_size, image_size)]))
+
+    # # unet
+    # for batch_size in [1]:
+    #     for image_size in [224]:
+    #         network_keys.append((f'unet',
+    #                             [(batch_size, 3, image_size, image_size)]))
+
+    # # vit
+    # for batch_size in [1, 4]:
+    #     for image_size in [256, 224]:
+    #         network_keys.append((f'vit',
+    #                             [(batch_size, 3, image_size, image_size)]))
+
+    # # detr
+    # for batch_size in [1, 4]:
+    #     for image_size in [256, 224]:
+    #         network_keys.append((f'detr',
+    #                             [(batch_size, 3, image_size, image_size)]))
 
     return network_keys
 
@@ -229,7 +271,7 @@ if __name__ == "__main__":
 
     # Dump the relay ir and task info for all networks
     network_keys = build_network_keys()
-    target = tvm.target.Target('llvm')
+    target = tvm.target.Target('cuda')
     for key in tqdm(network_keys):
         dump_network(key, target)
         gc.collect()

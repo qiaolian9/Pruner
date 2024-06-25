@@ -22,3 +22,5 @@ from .xgb_model import XGBModel
 from .mlp_model import MLPModel
 from .lgbm_model import LGBModel
 from .tabnet_model import TabNetModel
+from .psa_model import PSAModel
+from .pam_model import PAMModel

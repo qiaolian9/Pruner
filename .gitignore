@@ -245,3 +245,4 @@ scripts/*.pkl
 scripts/.dataset_cache
 scripts/results.tsv
 scripts/total_latency.tsv
+scripts/benchmark

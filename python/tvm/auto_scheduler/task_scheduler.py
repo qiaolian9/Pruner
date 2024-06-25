@@ -31,7 +31,7 @@ import pickle
 import numpy as np
 
 from .search_policy import SearchPolicy, SketchPolicy, PreloadMeasuredStates
-from .cost_model import RandomModel, XGBModel, MLPModel, LGBModel, TabNetModel
+from .cost_model import RandomModel, XGBModel, MLPModel, LGBModel, TabNetModel, PSAModel, PAMModel
 from .utils import array_mean
 from .measure import ProgramMeasurer, EmptyBuilder, EmptyRunner
 from .measure_record import RecordReader
@@ -40,6 +40,32 @@ from . import _ffi_api
 
 logger = logging.getLogger("auto_scheduler")
 
+psamodel_params = {
+    "k80": dict(
+        peak_performance=8226, glbmem_bandwidth=480, vec_len = 11,
+        active_blocks_per_sm = 1, sm_nums = 26, arch_sm_partition = 4, arch_warp_size = 32
+    ),
+    "t4": dict(
+        peak_performance=8141, glbmem_bandwidth=320, vec_len = 11,
+        active_blocks_per_sm = 1, sm_nums = 40, arch_sm_partition = 4, arch_warp_size = 32
+    ),
+    "titanv": dict(
+        peak_performance=14900, glbmem_bandwidth=651, vec_len = 11,
+        active_blocks_per_sm = 1, sm_nums = 80, arch_sm_partition = 4, arch_warp_size = 32
+    ),
+    "orin": dict(
+        peak_performance=2660, glbmem_bandwidth=204, vec_len = 11,
+        active_blocks_per_sm = 1, sm_nums = 16, arch_sm_partition = 4, arch_warp_size = 32
+    ),
+    "a100": dict(
+        peak_performance=19490, glbmem_bandwidth=1935, vec_len = 11,
+        active_blocks_per_sm = 1, sm_nums = 108, arch_sm_partition = 4, arch_warp_size = 32
+    ),
+    "a100_40": dict(
+        peak_performance=19490, glbmem_bandwidth=1555, vec_len = 11,
+        active_blocks_per_sm = 1, sm_nums = 108, arch_sm_partition = 4, arch_warp_size = 32
+    ),
+}
 
 def make_search_policies(
     search_policy,
@@ -51,7 +77,8 @@ def make_search_policies(
     load_log_file,
     adapative_training,
     disable_cost_model_update,
-    few_shot_learning='base_only'
+    psa_model_params = "a100_40",
+    few_shot_learning='base_only',
 ):
     """Make a list of search policies for a list of search tasks.
     It creates one policy per task.
@@ -91,9 +118,13 @@ def make_search_policies(
 
     if isinstance(search_policy, str):
         policy_type, model_type = search_policy.split(".")
-        if model_type in ['xgb', 'xgb-no-update', 'mlp', 'mlp-no-update', 'tab', 'tab-no-update']:
-            if model_type == 'xgb-no-update' or model_type == 'mlp-no-update' or model_type == 'tab-no-update':
+        if model_type in ['xgb', 'xgb-no-update', 'mlp', 'mlp-no-update', 'tab', 'tab-no-update', 
+                          'pam', 'pam-no-update', 'pam-siamese-update']:
+            if model_type == 'xgb-no-update' or model_type == 'mlp-no-update' or \
+                        model_type == 'tab-no-update' or model_type == 'pam-no-update':
                 disable_cost_model_update = True
+            if model_type == 'pam-siamese-update':
+                few_shot_learning = "siamese_update"
             if model_type in ['xgb', 'xgb-no-update']:
                 cost_model = XGBModel(
                     num_warmup_sample=len(tasks) * num_measures_per_round,
@@ -104,6 +135,11 @@ def make_search_policies(
                 cost_model = TabNetModel(
                     disable_update=disable_cost_model_update,
                     few_shot_learning=few_shot_learning
+                )
+            elif model_type in ['pam', 'pam-no-update', 'pam-siamese-update']:
+                cost_model = PAMModel(
+                    disable_update=disable_cost_model_update,
+                    few_shot_learning=few_shot_learning,
                 )
             else:
                 cost_model = MLPModel(
@@ -144,6 +180,8 @@ def make_search_policies(
         else:
             raise ValueError("Invalid search policy: " + search_policy)
 
+        print(psa_model_params)
+        cost_model_psa = PSAModel(**psamodel_params[psa_model_params])
         if policy_type == "sketch":
             if load_log_file:
                 # use the log file to restore the status of search policies.
@@ -154,6 +192,7 @@ def make_search_policies(
                 SketchPolicy(
                     task,
                     cost_model,
+                    cost_model_psa,
                     params=search_policy_params,
                     verbose=verbose,
                     init_search_callbacks=init_search_callbacks,
@@ -327,6 +366,7 @@ class TaskScheduler:
         search_policy_params=None,
         adapative_training=False,
         per_task_early_stopping=None,
+        psa_model_type=None,
     ):
         """Tune a batch of tasks together.
 
@@ -398,6 +438,7 @@ class TaskScheduler:
             self.load_log_file,
             adapative_training,
             disable_cost_model_update,
+            psa_model_type
         )
 
         # do a round robin first to warm up
@@ -500,7 +541,8 @@ class TaskScheduler:
         search_policy="default",
         search_policy_params=None,
         adapative_training=False,
-        per_task_early_stopping=None):
+        per_task_early_stopping=None,
+        psa_model_type=None):
 
         # init members
         self.tune_option = tune_option
@@ -570,7 +612,8 @@ class TaskScheduler:
             self.load_log_file,
             adapative_training,
             disable_cost_model_update,
-            few_shot_learning='plus_mix_task'
+            few_shot_learning='plus_mix_task',
+            psa_model_params=psa_model_type
         )
 
         for idx in range(len(self.tasks) // 2, len(self.tasks)):

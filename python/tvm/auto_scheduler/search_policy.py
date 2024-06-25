@@ -33,7 +33,7 @@ import random
 
 import tvm._ffi
 from tvm.runtime import Object
-from .cost_model import RandomModel
+from .cost_model import RandomModel, PSAModel
 from . import _ffi_api
 
 
@@ -177,15 +177,18 @@ class SketchPolicy(SearchPolicy):
     """
 
     DEFAULT_PARAMS = {
-        "eps_greedy": 0.05,
+        "eps_greedy": 0.1,
         "retry_search_one_round_on_empty": 1,
         "sample_init_min_population": 50,
-        "sample_init_use_measured_ratio": 0.2,
-        "evolutionary_search_population": 2048,
-        "evolutionary_search_num_iters": 4,
+        "sample_init_use_measured_ratio": 0.1,
+        "evolutionary_search_population": 1536,
+        "evolutionary_search_num_iters": 1,
+        "evolutionary_search_potential_space_num_iters": 2,
         "evolutionary_search_mutation_prob": 0.85,
         "cpu_multi_level_tiling_structure": "SSRSRS",
         "gpu_multi_level_tiling_structure": "SSSRRSRS",
+        "potential_space_size": 512,
+        "potential_space_iter": 2,
         # Notice: the default thread bind policy of GPU assumes the tiling structure to have at
         # least 3 spatial tiling levels in outermost
         "max_innermost_split_factor": 64,
@@ -197,6 +200,7 @@ class SketchPolicy(SearchPolicy):
         self,
         task,
         program_cost_model=RandomModel(),
+        program_cost_model_PSA=PSAModel(),
         params=None,
         seed=None,
         verbose=1,
@@ -213,6 +217,7 @@ class SketchPolicy(SearchPolicy):
             _ffi_api.SketchPolicy,
             task,
             program_cost_model,
+            program_cost_model_PSA,
             params,
             seed or random.randint(1, 1 << 30),
             verbose,
@@ -254,7 +259,7 @@ class SketchPolicy(SearchPolicy):
         states = _ffi_api.SketchPolicySampleInitialPopulation(self)
         return states
 
-    def evolutionary_search(self, init_populations, out_size):
+    def evolutionary_search(self, init_populations, out_size, mode=False):
         """Perform evolutionary search.
         This python interface is mainly used for debugging and testing.
         The actual search is all done in c++.
@@ -271,5 +276,5 @@ class SketchPolicy(SearchPolicy):
         states: List[State]
             The generated states
         """
-        states = _ffi_api.SketchPolicyEvolutionarySearch(self, init_populations, out_size)
+        states = _ffi_api.SketchPolicyEvolutionarySearch(self, init_populations, out_size, mode)
         return states

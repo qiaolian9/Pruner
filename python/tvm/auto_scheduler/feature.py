@@ -40,19 +40,25 @@ DEFAULT_MAX_N_BUFS = 5
 
 # The length of the feature vector
 DEFAULT_FEATURE_VEC_LEN = 164
-
+# The length of the feature vector for psa
+DEFAULT_FEATURE_VEC_LEN_PSA = 11
+# The length of the feature vector for PAM
+DEFAULT_FEATURE_VEC_LEN_PAM = 23
+DEFAULT_FEATURE_SEQ_LEN_PAM = 8
 # The size of int and float in bytes
 SIZE_OF_INT32 = 4
 SIZE_OF_FLOAT32 = 4
 
 
-def unpack_feature(byte_arr: bytearray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def unpack_feature(byte_arr: bytearray, mod: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Unpack the flatten feature (in byte array format) from c++
 
     Parameters
     ----------
     byte_arr: bytearray
         The two-dimensional feature vector in serialized byte array format
+    mod: bool
+        model mod for Ansor or PSA
 
     Returns
     -------
@@ -88,7 +94,10 @@ def unpack_feature(byte_arr: bytearray) -> Tuple[np.ndarray, np.ndarray, np.ndar
     To implement this format, we also store int as float, so we can store all numbers
     into a single float array.
     """
-    vec_len = DEFAULT_FEATURE_VEC_LEN
+    if mod:
+        vec_len = DEFAULT_FEATURE_VEC_LEN
+    else:
+        vec_len = DEFAULT_FEATURE_VEC_LEN_PSA
 
     # unpack sizes
     offset = 0
@@ -152,6 +161,76 @@ def unpack_feature(byte_arr: bytearray) -> Tuple[np.ndarray, np.ndarray, np.ndar
     assert offset == len(byte_arr), "%d vs %d" % (offset, len(byte_arr))
     return (
         np.array(features, dtype=object),
+        np.array(normalized_throughputs),
+        np.array(task_ids),
+        np.array(min_costs),
+    )
+
+
+
+def unpack_feature_pam(byte_arr: bytearray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    vec_len = DEFAULT_FEATURE_VEC_LEN
+
+    # unpack sizes
+    offset = 0
+    n = struct.unpack_from("1i", byte_arr, offset=offset)[0]
+    offset += SIZE_OF_INT32
+
+    sizes = struct.unpack_from("%di" % (n + 3), byte_arr, offset=offset)
+    offset += SIZE_OF_INT32 * (n + 3)
+
+    # unpack feature size
+    features_size = struct.unpack_from("%di" % n, byte_arr, offset=offset)
+    offset += n * SIZE_OF_INT32
+    kmp_index = struct.unpack_from("%di" % n, byte_arr, offset=offset)
+    offset += n * SIZE_OF_INT32
+
+
+    # unpack features
+    features = []
+    buf_features = []
+    # for size in sizes[:-3]:
+    for index in range(n):
+        size = sizes[index]
+        if size == 0:
+            # failed during lowering
+            features.append(np.zeros((1, vec_len)))
+            buf_features.append(np.zeros((DEFAULT_FEATURE_SEQ_LEN_PAM, DEFAULT_FEATURE_VEC_LEN_PAM)))
+        else:
+            x = struct.unpack_from("%df" % vec_len * features_size[index], byte_arr, offset=offset)
+            nparr = np.array(x, dtype=np.float32).reshape([features_size[index], vec_len])
+            features.append(nparr)
+            offset += vec_len * features_size[index] * SIZE_OF_FLOAT32
+            if kmp_index[index] >= 0:
+                per_buf_x = struct.unpack_from("%df" % DEFAULT_FEATURE_SEQ_LEN_PAM * DEFAULT_FEATURE_VEC_LEN_PAM, byte_arr, offset=offset)
+                per_buf_nparr = np.array(per_buf_x, dtype=np.float32).reshape([DEFAULT_FEATURE_SEQ_LEN_PAM, DEFAULT_FEATURE_VEC_LEN_PAM])
+                
+                buf_features.append(per_buf_nparr)
+                offset += DEFAULT_FEATURE_SEQ_LEN_PAM * DEFAULT_FEATURE_VEC_LEN_PAM * SIZE_OF_FLOAT32
+            else:
+                buf_features.append(np.zeros((DEFAULT_FEATURE_SEQ_LEN_PAM, DEFAULT_FEATURE_VEC_LEN_PAM)))
+    # unpack normalized_throughputs
+    assert len(buf_features) == len(features) == n, f"{len(buf_features)} vs {len(features)}, n = {n}"
+    m = sizes[-3]
+    normalized_throughputs = struct.unpack_from("%df" % m, byte_arr, offset=offset)
+    offset += m * SIZE_OF_FLOAT32
+
+    # unpack task_ids
+    m = sizes[-2]
+    task_ids = struct.unpack_from("%di" % m, byte_arr, offset=offset)
+    offset += m * SIZE_OF_INT32
+
+    # unpack min_costs
+    m = sizes[-1]
+    min_costs = struct.unpack_from("%df" % m, byte_arr, offset=offset)
+    offset += m * SIZE_OF_FLOAT32
+
+    assert offset == len(byte_arr), "%d vs %d" % (offset, len(byte_arr))
+    return (
+        np.array(features_size),
+        np.array(kmp_index),
+        np.array(features, dtype=object),
+        np.array(buf_features, dtype=object),
         np.array(normalized_throughputs),
         np.array(task_ids),
         np.array(min_costs),
@@ -263,3 +342,137 @@ def get_per_store_feature_names(max_n_bufs: Optional[int] = None) -> List[str]:
         The names of elements in the flatten feature vector
     """
     return _ffi_api.GetPerStoreFeatureNames(max_n_bufs or DEFAULT_MAX_N_BUFS)
+
+
+def get_per_store_features_from_states_psa(
+    states: List[Union[State, StateObject]], task: "SearchTask"
+) -> np.ndarray:
+    """Get per-store features from measurement input/result pairs
+    Parameters
+    ----------
+    states: List[Union[State, StateObject]]
+        The input states
+    Returns
+    -------
+    features: np.ndarray
+        Feature vectors
+    """
+    if isinstance(states[0], State):
+        state_objects = [s.state_object for s in states]
+    elif isinstance(states[0], StateObject):
+        state_objects = states
+    byte_arr = _ffi_api.GetPerStoreFeaturesFromStatesPSA(
+        state_objects, task
+    )
+
+    return unpack_feature(byte_arr, False)[0]
+
+def get_per_store_features_from_measure_pairs_psa(
+    inputs: List[MeasureInput],
+    results: List[MeasureResult],
+    skip_first_n_feature_extraction: int = 0
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Get per-store features from measurement input/result pairs
+
+    Parameters
+    ----------
+    inputs: List[MeasureInput]
+        The measure inputs
+    results: List[MeasureResult]
+        The measure results
+    skip_first_n_feature_extraction: int
+        Skip feature extraction for the first n states
+    max_n_bufs: int
+        The maximum number of extracted buffers for one statement
+
+    Returns
+    -------
+    features: np.ndarray
+        Feature vectors
+    normalized_throughputs: np.ndarray
+        Normalized throughputs
+    task_ids: np.ndarray
+        Task ids
+    min_latency: np.ndarray
+        Minimal latency for tasks
+    """
+    byte_arr = _ffi_api.GetPerStoreFeaturesFromMeasurePairsPSA(
+        inputs, results, skip_first_n_feature_extraction
+    )
+    return unpack_feature(byte_arr, False)
+
+
+def get_per_store_features_from_measure_pairs_pam(
+    inputs: List[MeasureInput],
+    results: List[MeasureResult],
+    skip_first_n_feature_extraction: int = 0,
+    mode: bool = True
+) -> np.ndarray:
+    """Get per-store features from measurement input/result pairs
+
+    Parameters
+    ----------
+    inputs: List[MeasureInput]
+        The measure inputs
+    results: List[MeasureResult]
+        The measure results
+    skip_first_n_feature_extraction: int
+        Skip feature extraction for the first n states
+    max_n_bufs: int
+        The maximum number of extracted buffers for one statement
+
+    Returns
+    -------
+    features: np.ndarray
+        Feature vectors
+    normalized_throughputs: np.ndarray
+        Normalized throughputs
+    task_ids: np.ndarray
+        Task ids
+    min_latency: np.ndarray
+        Minimal latency for tasks
+    """
+    byte_arr = _ffi_api.GetPerStoreFeaturesFromMeasurePairsPAM(
+        inputs, results, skip_first_n_feature_extraction, DEFAULT_MAX_N_BUFS
+    )
+    features_sizes, kmp_indexs, features, buf_features, normalized_throughputs, task_ids, min_costs = unpack_feature_pam(byte_arr)
+
+    if mode:
+        return features_sizes
+    
+    # print(features_sizes.max(), np.min(features_sizes[np.nonzero(features_sizes)]), kmp_indexs.max(), kmp_indexs.max())
+    
+    return features, buf_features, features_sizes, kmp_indexs, normalized_throughputs, task_ids, min_costs
+
+
+def get_per_store_features_from_states_pam(
+    states: List[Union[State, StateObject]], task: "SearchTask", 
+    mode: bool = True
+) -> np.ndarray:
+    """Get per-store features from measurement input/result pairs
+
+    Parameters
+    ----------
+    states: List[Union[State, StateObject]]
+        The input states
+
+    Returns
+    -------
+    features: np.ndarray
+        Feature vectors
+    """
+
+    if isinstance(states[0], State):
+        state_objects = [s.state_object for s in states]
+    elif isinstance(states[0], StateObject):
+        state_objects = states
+    # print('bbb')
+    byte_arr = _ffi_api.GetPerStoreFeaturesFromStatesPAM(
+        state_objects, task, DEFAULT_MAX_N_BUFS
+    )
+    features_sizes, kmp_indexs, features, buf_features, normalized_throughputs, task_ids, min_costs = unpack_feature_pam(byte_arr)
+
+    if mode:
+        return features_sizes
+    
+    return features, buf_features, features_sizes, kmp_indexs, normalized_throughputs, task_ids, min_costs
