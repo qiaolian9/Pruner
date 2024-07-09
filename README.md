@@ -1,9 +1,6 @@
-# Pruner: An Efficient Cross-Platform Tensor Compiler with Dual Awareness
+# Pruner
 
-A repo for Pruner: An Efficient Cross-Platform Tensor Compiler with Dual Awareness
-- The pipeline of Pruner is shown as following figure.
-
-![pipeline](./docs/Prunerresults/pipeline.png)
+A repo for Pruner
 
 - This repo is based on a fork of [Tenset](https://github.com/tlc-pack/tenset).
 
