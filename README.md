@@ -1,6 +1,10 @@
-
 # Pruner
-A repo for Pruner
+
+Pruner is a "Draft-then-Verify" exploration mechanism that accelerates the schedule search process.
+
+This repository is the official implementation of <br>
+[**Pruner: A Draft-then-Verify Exploration Mechanism to Accelerate Tensor Program Tuning**](https://doi.org/10.1145/3676641.3716269) <br>
+(Liang Qiao et al; ASPLOS 2025).
 
 - This repo is based on a fork of [Tenset](https://github.com/tlc-pack/tenset).
 
