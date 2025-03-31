@@ -75,3 +75,15 @@ Note: Details are reported in './scripts/res/resnet_50'
 ![compilertime_a100](./docs/Prunerresults/compilertime_a100.png)
 
 
+## Citation
+A paper describing Pruner's techniques is available [on acm dl](https://dl.acm.org/doi/abs/10.1145/3676641.3716269). Please cite Pruner as:
+
+``` bibtex
+@inproceedings{qiao2025pruner,
+  title={Pruner: A Draft-then-Verify Exploration Mechanism to Accelerate Tensor Program Tuning},
+  author={Qiao, Liang and Shi, Jun and Hao, Xiaoyu and Fang, Xi and Zhang, Sen and Zhao, Minfan and Zhu, Ziqi and Chen, Junshi and An, Hong and Tang, Xulong and others},
+  booktitle={Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2},
+  pages={949--965},
+  year={2025}
+}
+```
